@@ -84,7 +84,8 @@ class KinesisConsumer(object):
     """
     LOCK_DURATION = 30
 
-    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None):
+    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None,
+                 default_iterator_type='LATEST'):
         self.stream_name = stream_name
         self.error_queue = multiprocessing.Queue()
         self.record_queue = multiprocessing.Queue()
@@ -99,6 +100,7 @@ class KinesisConsumer(object):
         self.shards = {}
         self.stream_data = None
         self.run = True
+        self.default_iterator_type = default_iterator_type
 
     def state_shard_id(self, shard_id):
         return '_'.join([self.stream_name, shard_id])
@@ -140,7 +142,7 @@ class KinesisConsumer(object):
                     iterator_args = self.state.get_iterator_args(self.state_shard_id(shard_data['ShardId']))
                 except AttributeError:
                     # no self.state
-                    iterator_args = dict(ShardIteratorType='LATEST')
+                    iterator_args = dict(ShardIteratorType=self.default_iterator_type)
 
                 log.info("%s iterator arguments: %s", shard_data['ShardId'], iterator_args)
 
