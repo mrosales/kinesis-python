@@ -49,8 +49,6 @@ def sizeof(obj, seen=None):
 
 class AsyncProducer(SubprocessLoop):
     """Async accumulator and producer based on a multiprocessing Queue"""
-    # Tell our subprocess loop that we don't want to terminate on shutdown since we want to drain our queue first
-    TERMINATE_ON_SHUTDOWN = False
 
     # Max size & count
     # Per: https://docs.aws.amazon.com/streams/latest/dev/service-sizes-and-limits.html
@@ -83,7 +81,7 @@ class AsyncProducer(SubprocessLoop):
         records_count = 0
         timer_start = time.time()
 
-        while self.alive and (time.time() - timer_start) < self.buffer_time:
+        while (time.time() - timer_start) < self.buffer_time:
             # we want our queue to block up until the end of this buffer cycle, so we set out timeout to the amount
             # remaining in buffer_time by substracting how long we spent so far during this cycle
             queue_timeout = self.buffer_time - (time.time() - timer_start)
@@ -121,7 +119,10 @@ class AsyncProducer(SubprocessLoop):
         # At the end of our loop (before we exit, i.e. via a signal) we change our buffer time to 250ms and then re-call
         # the loop() method to ensure that we've drained any remaining items from our queue before we exit.
         self.buffer_time = 0.25
-        self.loop()
+        while not self.queue.empty():
+            log.debug("Producer was terminated but queue is not yet empty")
+            self.loop()
+        log.debug("Finished draining queue")
 
     def flush_records(self):
         if self.records:
@@ -141,6 +142,14 @@ class KinesisProducer(object):
         self.queue = multiprocessing.Queue()
         self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, max_count=max_count,
                                             max_size=max_size, boto3_session=boto3_session)
+        self.alive = True
 
     def put(self, data, explicit_hash_key=None, partition_key=None):
+        if not self.alive:
+            raise ValueError("Cannot put items on a closed producer")
         self.queue.put((data, explicit_hash_key, partition_key))
+
+    def shutdown(self):
+        self.alive = False
+        self.async_producer.shutdown()
+        self.queue.close()
