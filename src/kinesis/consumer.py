@@ -119,6 +119,10 @@ class KinesisConsumer(object):
 
         setup_again = False
         for shard_data in self.stream_data['StreamDescription']['Shards']:
+            ending_sequence = shard_data.get('SequenceNumberRange', {}).get("EndingSequenceNumber", None)
+            if ending_sequence:
+                log.info("Shard %s is already closed.", shard_data['ShardId'])
+                continue
             # see if we can get a lock on this shard id
             try:
                 shard_locked = self.state.lock_shard(self.state_shard_id(shard_data['ShardId']), self.LOCK_DURATION)
